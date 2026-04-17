@@ -157,6 +157,23 @@ jobs:
           sarif_file: "trivy-results-${{ matrix.major }}.sarif"
           category: "trivy-psql-${{ matrix.major }}"
 
+  dockerhub-description:
+    name: Sync Docker Hub description
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Push DOCKERHUB.md to Docker Hub
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PAT }}
+          repository: iplweb/bpp_dbserver
+          short-description: "PostgreSQL 16/17/18 + plpython3u + ICU pl-PL + autotune dla BPP"
+          readme-filepath: ./DOCKERHUB.md
+          enable-url-completion: true
+
   scout-main:
     name: Docker Scout on main (PG ${{ matrix.major }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
