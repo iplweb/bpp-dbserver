@@ -8,3 +8,9 @@
 
 # local Claude Code settings
 .claude/settings.local.json
+
+# pre-commit
+.pre-commit-cache/
+
+# ruff
+.ruff_cache/
