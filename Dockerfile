@@ -1,5 +1,5 @@
 #check=skip=SecretsUsedInArgOrEnv
-ARG POSTGRES_VERSION=16.6
+ARG POSTGRES_VERSION=16.13
 FROM postgres:${POSTGRES_VERSION}
 
 RUN localedef -i pl_PL -c -f UTF-8 -A /usr/share/locale/locale.alias pl_PL.UTF-8

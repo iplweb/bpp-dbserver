@@ -99,7 +99,7 @@ Zmienne ustawiane na etapie builda (przez `docker buildx bake` lub
 
 | Zmienna | Default | Opis |
 |---|---|---|
-| `POSTGRES_VERSION` | `16.6` (ARG w Dockerfile) / `["16.13","17.9","18.3"]` (matrix w bake) | Wersja bazowego obrazu `postgres:*`. `Dockerfile` używa `${PG_MAJOR}` eksportowanej z base image, więc instalowany jest `postgresql-plpython3-${PG_MAJOR}` — jeden Dockerfile pokrywa każdą major. |
+| `POSTGRES_VERSION` | `16.13` (ARG w Dockerfile) / `["16.13","17.9","18.3"]` (matrix w bake) | Wersja bazowego obrazu `postgres:*`. `Dockerfile` używa `${PG_MAJOR}` eksportowanej z base image, więc instalowany jest `postgresql-plpython3-${PG_MAJOR}` — jeden Dockerfile pokrywa każdą major. |
 
 ### Runtime — standardowe Postgres
 
