@@ -165,7 +165,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Push DOCKERHUB.md to Docker Hub
-        uses: peter-evans/dockerhub-description@v4
+        uses: peter-evans/dockerhub-description@v5
         with:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKERHUB_ADMIN_PAT }}
