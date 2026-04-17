@@ -124,3 +124,35 @@ jobs:
         with:
           sarif_file: "trivy-results-${{ matrix.major }}.sarif"
           category: "trivy-psql-${{ matrix.major }}"
+
+  scan-main:
+    name: Trivy scan on main (PG ${{ matrix.major }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        major: ["16", "17", "18"]
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run Trivy vulnerability scanner (informational)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: "iplweb/bpp_dbserver:psql-${{ matrix.major }}"
+          format: "sarif"
+          output: "trivy-results-${{ matrix.major }}.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+          ignore-unfixed: "true"
+
+      - name: Upload Trivy SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: "trivy-results-${{ matrix.major }}.sarif"
+          category: "trivy-psql-${{ matrix.major }}"
