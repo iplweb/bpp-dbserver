@@ -1,0 +1,10 @@
+.DS_Store
+*.swp
+*.swo
+*~
+
+# bake cache / build artifacts
+.buildx-cache/
+
+# local Claude Code settings
+.claude/settings.local.json

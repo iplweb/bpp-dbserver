@@ -1,0 +1,37 @@
+# Changelog
+
+Wszystkie istotne zmiany w tym repo są dokumentowane tutaj.
+
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+wersjonowanie tagów git: kalendarzowe `vYYYYMMDD` (sufiks `.N` gdy >1/dzień).
+Tagi Docker są niezależne: `psql-<X.Y>` i `psql-<X>` z `docker-bake.hcl`.
+
+## [v20260417] — 2026-04-17
+
+### Added
+
+- Wydzielenie obrazu `iplweb/bpp_dbserver` z monorepo `iplweb/bpp` do
+  osobnego repozytorium `iplweb/bpp-dbserver`.
+- Matrix build po `POSTGRES_VERSIONS` w `docker-bake.hcl` — jeden bake
+  buduje PG 16, 17 i 18 równolegle.
+- GH Actions workflow (`.github/workflows/build.yml`): trigger na tag
+  `v*`, build matrix, push do Docker Hub, Trivy scan per major.
+- README z logo BPP oraz IPL Web, linkami do iplweb.pl i bpp.iplweb.pl
+  i pełną dokumentacją parametrów runtime (standardowe PG + autotune env vars).
+- `LICENSE` (MIT, PL + EN).
+- `CLAUDE.md` — krótki opis architektury i komend dla sesji Claude Code.
+- Dependabot dla bazowego obrazu `postgres:*` i GH Actions dependencies.
+
+### Changed
+
+- `Dockerfile` używa `${PG_MAJOR}` z base image do instalacji
+  `postgresql-plpython3-*` — bez hardcodowanej wersji major.
+- Bump PostgreSQL: **16.6 → 16.13**, **17.2 → 17.9**, **18.0 → 18.3**
+  (najnowsze stabilne patche wg postgresql.org/support/versioning).
+- Schemat tagowania Docker: **tag `:latest` nie jest publikowany**. Zamiast
+  tego publikowane są wyłącznie tagi wersjonowane: `psql-<X.Y>` (pin
+  patch) i `psql-<X>` (rolling minor w ramach major). Cel: zapobiec
+  przypadkowemu pullowi niekompatybilnej major wersji, który mógłby
+  uszkodzić `PGDATA`.
+- Schemat tagowania git: kalendarzowy `vYYYYMMDD` (+ sufiks `.N`),
+  niezależny od schematu tagów Docker.

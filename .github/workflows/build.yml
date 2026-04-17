@@ -1,0 +1,100 @@
+name: Build & publish bpp_dbserver
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      push_to_registry:
+        description: "Push built images to Docker Hub"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build matrix (PG 16/17/18) & push
+    runs-on: ubuntu-latest
+    outputs:
+      should_push: ${{ steps.decide.outputs.should_push }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Decide whether to push
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_PUSH: ${{ inputs.push_to_registry }}
+        run: |
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            echo "should_push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_push=$DISPATCH_PUSH" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.decide.outputs.should_push == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Bake print (plan)
+        run: docker buildx bake --print
+
+      - name: Build matrix (and push when applicable)
+        env:
+          PUSH: ${{ steps.decide.outputs.should_push }}
+        run: |
+          if [[ "$PUSH" == "true" ]]; then
+            docker buildx bake --set "*.output=type=registry" --push
+          else
+            docker buildx bake --load
+          fi
+
+  scan:
+    name: Trivy scan (PG ${{ matrix.major }})
+    needs: build
+    if: needs.build.outputs.should_push == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        major: ["16", "17", "18"]
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "iplweb/bpp_dbserver:psql-${{ matrix.major }}"
+          format: "sarif"
+          output: "trivy-results-${{ matrix.major }}.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          ignore-unfixed: "true"
+
+      - name: Upload Trivy SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: "trivy-results-${{ matrix.major }}.sarif"
+          category: "trivy-psql-${{ matrix.major }}"
