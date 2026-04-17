@@ -13,10 +13,12 @@ HEALTHCHECK --interval=5s --timeout=3s --retries=5 --start-period=10s \
 
 # PG_MAJOR is exported by the upstream postgres image so the plpython3
 # package picks the right major version automatically.
-# hadolint ignore=DL3008
+# hadolint ignore=DL3005,DL3008
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
         "postgresql-plpython3-${PG_MAJOR}" \
         python-is-python3
 
