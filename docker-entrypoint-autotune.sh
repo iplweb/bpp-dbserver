@@ -1,4 +1,5 @@
 #!/bin/bash
+set -Eeuo pipefail
 
 # Zainicjuj bazę danych standardowo (standardowo dla tego obrazu)
 /usr/local/bin/docker-ensure-initdb.sh

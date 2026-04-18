@@ -8,6 +8,19 @@ Tagi Docker są niezależne: `psql-<X.Y>` i `psql-<X>` z `docker-bake.hcl`.
 
 ## [Unreleased]
 
+## [v20260418.1] — 2026-04-18
+
+### Fixed
+
+- `docker-entrypoint-autotune.sh`: dodane `set -Eeuo pipefail`. Bez tego
+  niepowodzenie `docker-ensure-initdb.sh` (np. konflikt layoutu PGDATA na
+  PG18 przy starszym obrazie) nie zatrzymywało skryptu, który dalej
+  dopisywał `include_if_exists` do hardcoded
+  `/var/lib/postgresql/data/postgresql.conf`, zaśmiecając zamontowany
+  volume i blokując kolejne próby `initdb` (initdb wymaga pustego katalogu).
+
+## [v20260418] — 2026-04-18
+
 ### Fixed
 
 - Wymuszenie klasycznego layoutu `PGDATA=/var/lib/postgresql/data` w
