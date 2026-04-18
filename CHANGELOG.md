@@ -19,6 +19,16 @@ Tagi Docker są niezależne: `psql-<X.Y>` i `psql-<X>` z `docker-bake.hcl`.
   `/var/lib/postgresql/data/postgresql.conf`, zaśmiecając zamontowany
   volume i blokując kolejne próby `initdb` (initdb wymaga pustego katalogu).
 
+### Added
+
+- CI: smoke test obrazu przed pushem do Docker Hub. Build zawsze robi
+  `--load`, następnie dla każdego majora PG 16/17/18 startuje kontener,
+  czeka na `pg_isready`, weryfikuje `CREATE EXTENSION plpython3u` oraz
+  obecność kolacji `pl-x-icu`. Push na Docker Hub tylko przy tagu
+  `v*` (lub `workflow_dispatch` z `push_to_registry=true`) i wyłącznie
+  gdy smoke przeszedł. Job odpala się teraz też na PR/main (bez pusha),
+  żeby łapać regresje przed releasem.
+
 ## [v20260418] — 2026-04-18
 
 ### Fixed
