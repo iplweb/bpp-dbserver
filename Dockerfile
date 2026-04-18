@@ -8,6 +8,12 @@ ENV LANG=pl_PL.utf-8
 ENV POSTGRES_INITDB_ARGS="--locale-provider=icu --icu-locale=pl-PL"
 ENV POSTGRES_HOST_AUTH_METHOD=trust
 
+# Wymuszenie klasycznego layoutu PGDATA. Upstream postgres:18+ zmienił default
+# na /var/lib/postgresql/<major>/docker; my trzymamy /var/lib/postgresql/data
+# dla spójności między majorami i kompatybilności z istniejącymi volume'ami
+# oraz hardcoded ścieżkami w docker-entrypoint-autotune.sh.
+ENV PGDATA=/var/lib/postgresql/data
+
 HEALTHCHECK --interval=5s --timeout=3s --retries=5 --start-period=10s \
   CMD pg_isready -U "${POSTGRES_USER:-postgres}"
 

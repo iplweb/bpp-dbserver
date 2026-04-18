@@ -6,6 +6,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 wersjonowanie tagów git: kalendarzowe `vYYYYMMDD` (sufiks `.N` gdy >1/dzień).
 Tagi Docker są niezależne: `psql-<X.Y>` i `psql-<X>` z `docker-bake.hcl`.
 
+## [Unreleased]
+
+### Fixed
+
+- Wymuszenie klasycznego layoutu `PGDATA=/var/lib/postgresql/data` w
+  `Dockerfile`. Upstream `postgres:18+` zmienił default na
+  `/var/lib/postgresql/<major>/docker`, co łamało hardcoded ścieżki w
+  `docker-entrypoint-autotune.sh` i kompatybilność z istniejącymi
+  volume'ami PG16/17. Override jest no-opem dla PG16/17 (ich default) i
+  fixem dla PG18.
+
 ## [v20260417] — 2026-04-17
 
 ### Added
