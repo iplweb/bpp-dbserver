@@ -23,7 +23,10 @@ variable "POSTGRES_VERSIONS" {
 }
 
 variable "PLATFORM" {
-  default = "linux/amd64"
+  # Multi-arch: x86_64 (linux/amd64) + Apple Silicon / ARM (linux/arm64).
+  # Override np. dla lokalnego buildu single-arch:
+  #   docker buildx bake --set "*.platform=linux/amd64"
+  default = "linux/amd64,linux/arm64"
 }
 
 variable "PUSH" {
@@ -48,6 +51,6 @@ target "dbserver" {
     "iplweb/bpp_dbserver:psql-${pg}",
     "iplweb/bpp_dbserver:psql-${split(".", pg)[0]}"
   ]
-  platforms = [PLATFORM]
+  platforms = split(",", PLATFORM)
   output    = PUSH ? ["type=registry"] : ["type=docker"]
 }

@@ -8,6 +8,19 @@ Tagi Docker są niezależne: `psql-<X.Y>` i `psql-<X>` z `docker-bake.hcl`.
 
 ## [Unreleased]
 
+## [v20260427] — 2026-04-27
+
+### Changed
+
+- Domyślny build jest teraz multi-arch: `linux/amd64` + `linux/arm64`.
+  Default zmiennej `PLATFORM` w `docker-bake.hcl` zmieniony z
+  `linux/amd64` na `linux/amd64,linux/arm64`. Cel: natywne wsparcie
+  Apple Silicon (Mac M1/M2/M3) bez emulacji QEMU. CI smoke test dalej
+  leci na `linux/amd64` (runner GH Actions amd64, `--load` nie obsługuje
+  multi-arch); multi-arch idzie dopiero w kroku push do Docker Hub.
+  Dla single-arch lokalnie:
+  `docker buildx bake --set "*.platform=linux/amd64"`.
+
 ## [v20260418.1] — 2026-04-18
 
 ### Fixed

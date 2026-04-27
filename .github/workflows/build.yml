@@ -77,8 +77,11 @@ jobs:
       - name: Bake print (plan)
         run: docker buildx bake --print
 
-      - name: Build matrix (load locally for smoke)
-        run: docker buildx bake --load
+      - name: Build matrix (load locally for smoke, amd64 only)
+        # `docker buildx bake --load` nie obsługuje multi-arch; runner GH
+        # Actions jest amd64, więc smoke leci tylko na linux/amd64.
+        # Multi-arch (amd64 + arm64) buduje się dopiero w kroku push.
+        run: docker buildx bake --set "*.platform=linux/amd64" --load
 
       - name: Smoke test (PG 16/17/18)
         run: |
