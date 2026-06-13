@@ -2,11 +2,10 @@
   <img src="https://github.com/iplweb/bpp/raw/dev/src/bpp/static/bpp/images/logo_bpp.png" width="480" alt="Logo BPP">
 </p>
 
-<h1 align="center">bpp-dbserver — obraz PostgreSQL dla BPP</h1>
+<h1 align="center">bpp-dbserver — autostrojony PostgreSQL dla BPP</h1>
 
 <p align="center">
-  <a href="https://github.com/iplweb/bpp-dbserver/actions/workflows/build.yml"><img src="https://github.com/iplweb/bpp-dbserver/actions/workflows/build.yml/badge.svg" alt="Build"></a>
-  <a href="https://hub.docker.com/r/iplweb/bpp_dbserver"><img src="https://img.shields.io/docker/pulls/iplweb/bpp_dbserver" alt="Docker Pulls"></a>
+  <a href="https://github.com/iplweb/bpp-dbserver/actions/workflows/ci.yml"><img src="https://github.com/iplweb/bpp-dbserver/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
 </p>
 
@@ -23,83 +22,65 @@
 
 ## O projekcie
 
-Obraz Dockera z PostgreSQL-em dla aplikacji **BPP** (Bibliografia Publikacji
-Pracowników). Bazuje na oficjalnym obrazie `postgres:${POSTGRES_VERSION}`
-z dołożonymi:
+Lekka konfiguracja PostgreSQL dla aplikacji **BPP** (Bibliografia Publikacji
+Pracowników) — uruchamiana na **oficjalnym obrazie `postgres`**, bez budowania
+własnego obrazu. Dwa pliki podmontowuje się (bind-mount) do kontenera:
 
-- **`plpython3u`** — proceduralny język Python dla PostgreSQL (używany
-  przez funkcje BPP).
-- **Locale `pl_PL.UTF-8`** + **ICU collation `pl-PL`** — poprawne
-  sortowanie polskich znaków (`initdb --locale-provider=icu`).
-- **Autotune** (`/autotune.py`) — dynamiczna konfiguracja pamięci PG na
-  podstawie cgroup/proc, z pgtune jako podstawą.
-- **Healthcheck** (`pg_isready`).
+- **`autotune.sh`** — czysty skrypt **shell + awk** (bez Pythona). Na starcie
+  czyta limit pamięci z cgroup (limit kontenera) lub `/proc/meminfo` (host)
+  i generuje konfigurację w stylu pgtune (`shared_buffers`, `work_mem`,
+  parallelizm itd.), dołączaną przez `include_if_exists`.
+- **`docker-entrypoint-autotune.sh`** — entrypoint, który inicjalizuje bazę
+  standardowo, uruchamia autotune i przekazuje sterowanie do upstreamowego
+  `docker-entrypoint.sh`.
 
-Obraz jest publikowany jako `iplweb/bpp_dbserver:psql-<version>` na Docker Hub.
+**Polskie sortowanie** zapewnia **ICU** (`--locale-provider=icu --icu-locale=pl-PL`)
+ustawiane przez zmienną `POSTGRES_INITDB_ARGS` — więc **nie jest potrzebny**
+systemowy locale `pl_PL` (ani `LANG`). Brak własnego obrazu = brak `plpython3u`,
+brak Pythona, brak osobnego cyklu wydawniczego obrazu.
 
----
-
-## Tagi (Docker Hub)
-
-Obraz publikowany pod **wyłącznie wersjonowanymi** tagami. **Nie istnieje
-tag `:latest`** — celowo, żeby przypadkowy `docker pull` nie ściągnął
-niekompatybilnej major wersji PG i nie uszkodził istniejącego `PGDATA`.
-
-| Tag | Przykład | Znaczenie |
-|---|---|---|
-| `psql-<MAJOR>.<MINOR>` | `psql-16.13` | Pinning do konkretnej wersji patch. Zalecane dla produkcji. |
-| `psql-<MAJOR>` | `psql-16` | Rolling w ramach jednej major. OK dla dev/CI, w produkcji pinuj patch. |
-
-Aktualnie wspierane major wersje: **16, 17, 18**.
-
-**Upgrade między major wersjami** (np. `psql-16` → `psql-17`) **wymaga**
-pg_upgrade albo pg_dump/restore na volumenie `PGDATA`. Nie podmieniaj
-tagu w locie na tym samym volumenie — stracisz dane.
+> **Dlaczego nie własny obraz?** Wszystko, czego potrzebuje BPP, da się ustawić
+> zmiennymi środowiskowymi (ICU, `PGDATA`, auth) plus podmontowanym autotune.
+> Jedyne, co dawał własny build, to systemowy locale `pl_PL` (komunikaty /
+> formatowanie liczb i dat po polsku) — sortowanie i tak załatwia ICU.
 
 ---
 
-## Użycie
+## Szybki start
 
-### docker run (smoke test)
+### docker compose
+
+Gotowy przykład: [`examples/docker-compose.yml`](examples/docker-compose.yml):
 
 ```bash
-docker run --rm -d \
-    --name bpp-db \
-    -e POSTGRES_PASSWORD=secret \
+docker compose -f examples/docker-compose.yml up
+```
+
+### docker run
+
+```bash
+docker run --rm -d --name bpp-db \
+    --memory=2g \
+    -e POSTGRES_HOST_AUTH_METHOD=trust \
+    -e PGDATA=/var/lib/postgresql/data \
+    -e POSTGRES_INITDB_ARGS="--locale-provider=icu --icu-locale=pl-PL" \
+    -v "$PWD/docker-entrypoint-autotune.sh:/usr/local/bin/docker-entrypoint-autotune.sh:ro" \
+    -v "$PWD/autotune.sh:/autotune.sh:ro" \
     -p 5432:5432 \
-    iplweb/bpp_dbserver:psql-16.13
+    --entrypoint bash \
+    postgres:18 /usr/local/bin/docker-entrypoint-autotune.sh postgres
 ```
 
-### docker compose (aplikacja BPP)
+Autotune skaluje konfigurację do limitu `--memory` / `mem_limit` kontenera.
+Wspierane major wersje PostgreSQL: **16, 17, 18** (dowolny tag `postgres:*`).
 
-```yaml
-services:
-  db:
-    image: iplweb/bpp_dbserver:psql-16.13
-    environment:
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?required}
-      POSTGRES_HOST_AUTH_METHOD: scram-sha-256   # NIE zostawiaj domyślnego 'trust' w produkcji
-      POSTGRESQL_RAM_THIS_MUCH_GB: 8192          # opcjonalnie: wymusza ilość RAM dla PG
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-volumes:
-  pgdata:
-```
+> **`POSTGRES_HOST_AUTH_METHOD=trust`** w przykładach to wygoda dev/test —
+> kontener ufa wszystkim połączeniom **bez hasła**. W produkcji ustaw
+> `-e POSTGRES_PASSWORD=… -e POSTGRES_HOST_AUTH_METHOD=scram-sha-256`.
 
 ---
 
 ## Parametry konfiguracyjne
-
-### Build-time (ARG)
-
-Zmienne ustawiane na etapie builda (przez `docker buildx bake` lub
-`--build-arg`):
-
-| Zmienna | Default | Opis |
-|---|---|---|
-| `POSTGRES_VERSION` | `16.13` (ARG w Dockerfile) / `["16.13","17.9","18.3"]` (matrix w bake) | Wersja bazowego obrazu `postgres:*`. `Dockerfile` używa `${PG_MAJOR}` eksportowanej z base image, więc instalowany jest `postgresql-plpython3-${PG_MAJOR}` — jeden Dockerfile pokrywa każdą major. |
 
 ### Runtime — standardowe Postgres
 
@@ -108,12 +89,11 @@ Zmienne ustawiane na etapie builda (przez `docker buildx bake` lub
 | `POSTGRES_PASSWORD` | — | Hasło superusera. **Wymagane**, chyba że `POSTGRES_HOST_AUTH_METHOD=trust` (dev only). |
 | `POSTGRES_USER` | `postgres` | Nazwa superusera. |
 | `POSTGRES_DB` | `$POSTGRES_USER` | Domyślna baza tworzona na starcie. |
-| `POSTGRES_HOST_AUTH_METHOD` | **`trust`** (!) | Ten obraz domyślnie **ufa wszystkim połączeniom** dla wygody dev/test. W produkcji **MUSI** być nadpisane na `scram-sha-256` lub `md5`. |
-| `POSTGRES_INITDB_ARGS` | `--locale-provider=icu --icu-locale=pl-PL` | Argumenty dla `initdb`. Domyślnie ICU pl-PL (sortowanie polskie). |
-| `LANG` | `pl_PL.utf-8` | Locale procesu Postgresa (komunikaty, format daty). |
-| `PGDATA` | `/var/lib/postgresql/data` | Ścieżka do katalogu danych (dziedziczona z base image). |
+| `POSTGRES_HOST_AUTH_METHOD` | — (ustaw `trust` dla dev) | W produkcji **MUSI** być `scram-sha-256` lub `md5`. |
+| `POSTGRES_INITDB_ARGS` | — (ustaw `--locale-provider=icu --icu-locale=pl-PL`) | Argumenty dla `initdb`; ICU pl-PL daje polskie sortowanie bez systemowego locale. |
+| `PGDATA` | `/var/lib/postgresql/data` (zalecane) | Katalog danych. Pinujemy klasyczny układ; stock `postgres:18+` domyślnie użyłby `/var/lib/postgresql/18/docker`. |
 
-### Runtime — autotune.py (**unikalne dla tego obrazu**)
+### Runtime — autotune
 
 Wszystkie opcjonalne — brak = auto-detekcja z cgroup (limit kontenera)
 lub `/proc/meminfo` (host).
@@ -145,81 +125,45 @@ Autotune ustawia na podstawie RAM i liczby CPU (nie są to env vars):
 - `max_parallel_workers` = nproc
 - `max_parallel_maintenance_workers` = jak gather
 
-Formuły pochodzą z pgtune z drobnymi modyfikacjami — szczegóły w
-komentarzach w `autotune.py`.
+Formuły pochodzą z pgtune z drobnymi modyfikacjami — szczegóły w komentarzach
+w `autotune.sh`. Skrypt jest portem oryginalnego `autotune.py` (zachowanego
+jako referencja) i daje **identyczny bajt w bajt** wynik.
 
 ### Volumes / persistence
 
-- `PGDATA` (`/var/lib/postgresql/data`) — zamountuj volume, inaczej dane
-  zostaną utracone przy restarcie kontenera.
-- **Nie podmieniaj tagu między major wersjami** na tym samym volumenie
-  — plik `PG_VERSION` w `PGDATA` trzyma major, a binaria Postgresa
-  z nowej major mogą odmówić startu lub, co gorsza, uszkodzić dane.
-- Upgrade major → major: użyj `pg_upgrade` (z dwoma podmapowanymi
-  kontenerami) albo `pg_dump` + `pg_restore`.
+- Zamountuj volume na `PGDATA` (`/var/lib/postgresql/data`), inaczej dane
+  zostaną utracone przy `docker rm`.
+- **Nie podpinaj tego samego volumenu pod inną major wersję** `postgres`
+  (np. `postgres:16` → `postgres:17`) — plik `PG_VERSION` w `PGDATA` trzyma
+  major, a binaria z nowej major odmówią startu lub uszkodzą dane.
+- Upgrade major → major: `pg_upgrade` (dwa podmapowane kontenery) albo
+  `pg_dump` + `pg_restore`.
 
 ---
 
-## Build lokalny
+## Self-test
+
+`autotune.sh` ma wbudowany test deterministycznych wartości:
 
 ```bash
-# Wszystkie major wersje z matrixa (docker-bake.hcl)
-docker buildx bake --print          # plan
-docker buildx bake                  # build lokalny (load do dockerd)
-
-# Konkretna major:
-docker buildx bake dbserver-16-13
-
-# Override wersji patch:
-docker buildx bake --set "dbserver-16-13.args.POSTGRES_VERSION=16.14"
+sh autotune.sh --test     # -> OK
 ```
 
-Build w GH Actions (trigger: tag `v*`) publikuje wszystkie 6 tagów
-(`psql-16.13`, `psql-16`, `psql-17.9`, `psql-17`, `psql-18.3`, `psql-18`)
-do Docker Hub i skanuje każdą major wersję Trivy.
-
----
-
-## Smoke test (po zbudowaniu / pull)
-
-```bash
-for tag in psql-16 psql-17 psql-18; do
-  docker run --rm -d --name smoke_$tag \
-      -e POSTGRES_PASSWORD=x iplweb/bpp_dbserver:$tag
-  sleep 5
-  docker exec smoke_$tag psql -U postgres -c "CREATE EXTENSION plpython3u;"
-  docker exec smoke_$tag psql -U postgres -c "SHOW lc_collate;"
-  docker stop smoke_$tag && docker rm smoke_$tag
-done
-```
-
----
-
-## Release flow
-
-1. Update `POSTGRES_VERSIONS` w `docker-bake.hcl` do aktualnych patchy
-   (np. po release PostgreSQL — patrz
-   [postgresql.org/support/versioning](https://www.postgresql.org/support/versioning/)).
-2. Update `CHANGELOG.md` — nota o zmianie patchy.
-3. Tag git kalendarzowy: `git tag v<YYYYMMDD>` (np. `v20260417`); gdy
-   w tym samym dniu jest więcej niż jedno wydanie, kolejne dostają sufiks
-   `.N` (`v20260417.1`, `v20260417.2`, ...). Tag git jest **niezależny** od
-   tagów Docker (`psql-<X.Y>`, `psql-<X>`) — te drugie wynikają z
-   `docker-bake.hcl`. Push tagu → GH Actions builduje i publikuje.
-4. Trivy scan musi przejść (critical/high severity = fail).
+CI (`.github/workflows/ci.yml`) odpala self-test, `pre-commit` (ruff +
+shellcheck) oraz smoke test: podmontowuje autotune na stockowy
+`postgres:16/17/18` i weryfikuje, że konfiguracja jest strojona i działa
+polskie sortowanie ICU.
 
 ---
 
 ## Historia
 
-Wcześniej `docker/dbserver/` żył w monorepo
-[`iplweb/bpp`](https://github.com/iplweb/bpp) i publikował obraz
-`iplweb/bpp_dbserver:latest` razem z appserverem przy każdym release BPP.
-Wydzielenie do osobnego repo (2026-04) daje:
-
-- niezależny release cycle (bump Postgresa nie wymaga release'u BPP),
-- matrix build dla wielu major wersji na raz,
-- eliminację tagu `:latest` — bezpieczny pinning po stronie konsumentów.
+Wcześniej to repo budowało i publikowało własny obraz
+`iplweb/bpp_dbserver:psql-<X.Y>` na Docker Hub (z `plpython3u`, później bez).
+Okazało się jednak, że całą wartość (autotune + ICU pl-PL) da się dostarczyć
+**bez własnego obrazu** — przez podmontowanie skryptów do oficjalnego
+`postgres`. Usunięto więc `Dockerfile`, `docker-bake.hcl` oraz pipeline
+budowania/publikacji obrazu; autotune przepisano z Pythona na czysty shell.
 
 ## O BPP
 

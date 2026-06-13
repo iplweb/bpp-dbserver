@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: autotune self-test (Python-free)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run autotune self-test
+        run: sh autotune.sh --test
+
+  lint:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: pre-commit/action@v3.0.1
+
+  smoke:
+    name: Smoke on stock postgres (PG ${{ matrix.major }})
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        major: ["16", "17", "18"]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Bind-mount autotune onto stock postgres:${{ matrix.major }}
+        env:
+          PG_MAJOR: ${{ matrix.major }}
+        run: |
+          set -Eeuo pipefail
+          C=smoke
+          docker run -d --name "$C" \
+            --memory=2g \
+            -e POSTGRES_HOST_AUTH_METHOD=trust \
+            -e PGDATA=/var/lib/postgresql/data \
+            -e POSTGRES_INITDB_ARGS="--locale-provider=icu --icu-locale=pl-PL" \
+            -v "$PWD/docker-entrypoint-autotune.sh:/usr/local/bin/docker-entrypoint-autotune.sh:ro" \
+            -v "$PWD/autotune.sh:/autotune.sh:ro" \
+            --entrypoint bash \
+            "postgres:${PG_MAJOR}" /usr/local/bin/docker-entrypoint-autotune.sh postgres
+
+          # Wait up to 60s for readiness
+          ready=0
+          for _ in $(seq 1 30); do
+            if docker exec "$C" pg_isready -U postgres >/dev/null 2>&1; then ready=1; break; fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "FAIL: server not ready for postgres:${PG_MAJOR}"
+            docker logs "$C" || true
+            exit 1
+          fi
+
+          # autotune must have run: shared_buffers != stock 128MB default
+          sb=$(docker exec "$C" psql -U postgres -Atc "SHOW shared_buffers;")
+          echo "shared_buffers=${sb}"
+          if [ "$sb" = "128MB" ]; then
+            echo "FAIL: autotune did not apply for postgres:${PG_MAJOR}"
+            exit 1
+          fi
+
+          # Polish ICU collation works without an OS pl_PL locale
+          ok=$(docker exec "$C" psql -U postgres -Atc "SELECT 'ł' < 'm' COLLATE \"pl-x-icu\";")
+          if [ "$ok" != "t" ]; then
+            echo "FAIL: Polish ICU collation broken for postgres:${PG_MAJOR}"
+            exit 1
+          fi
+
+          docker rm -f "$C" >/dev/null
+          echo "Smoke OK for postgres:${PG_MAJOR}"
