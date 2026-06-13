@@ -1,0 +1,31 @@
+# Option B: run BPP's tuned PostgreSQL on the STOCK `postgres` image — no custom
+# image / no build. The Python-free autotune entrypoint and script are bind-mounted.
+#
+#   docker compose -f examples/docker-compose.yml up
+#
+# Polish collation comes from ICU (POSTGRES_INITDB_ARGS below), so no OS pl_PL
+# locale is required. autotune sizes shared_buffers/work_mem/etc. to mem_limit.
+services:
+  db:
+    image: postgres:18
+    # Bind-mounted, Python-free entrypoint replaces the stock one.
+    entrypoint: ["bash", "/usr/local/bin/docker-entrypoint-autotune.sh"]
+    command: ["postgres"]
+    environment:
+      # dev/test convenience — set a password + scram-sha-256 in production.
+      POSTGRES_HOST_AUTH_METHOD: "trust"
+      # Pin the classic data layout (stock PG18 would use /var/lib/postgresql/18/docker).
+      PGDATA: "/var/lib/postgresql/data"
+      # Polish sorting via ICU — works without an OS pl_PL locale.
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=pl-PL"
+    volumes:
+      - "../docker-entrypoint-autotune.sh:/usr/local/bin/docker-entrypoint-autotune.sh:ro"
+      - "../autotune.sh:/autotune.sh:ro"
+      - "pgdata:/var/lib/postgresql/data"
+    ports:
+      - "5432:5432"
+    # autotune reads the container's cgroup memory limit; this caps it at 2 GiB.
+    mem_limit: 2g
+
+volumes:
+  pgdata:

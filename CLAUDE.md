@@ -4,62 +4,58 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Docker image `iplweb/bpp_dbserver` — PostgreSQL base image for the BPP
-application ([bpp.iplweb.pl](https://bpp.iplweb.pl)), with `plpython3u`, ICU
-`pl-PL` collation, and a Python autotune script that generates a
-`postgresql.conf` include at container start.
+BPP's tuned PostgreSQL, run on the **stock `postgres` image** (no custom image
+is built). Two files are bind-mounted into the container: a Python-free
+autotune script and an entrypoint wrapper. Polish collation comes from ICU
+(`POSTGRES_INITDB_ARGS`), so no OS `pl_PL` locale is needed. There is no
+`plpython3u`, no Python, and no published Docker image.
 
 ## Commands
 
-### Build (local)
-- All PG majors in matrix: `docker buildx bake`
-- Single target: `docker buildx bake dbserver-16-13`
-- Print plan (no build): `docker buildx bake --print`
-- Override a patch version: `docker buildx bake --set "dbserver-16-13.args.POSTGRES_VERSION=16.14"`
-
 ### Autotune self-test
-- `python autotune.py --test` — asserts deterministic config for fixed RAM sizes.
+- `sh autotune.sh --test` — asserts deterministic config for fixed RAM sizes
+  (Python-free; `autotune.py` is kept only as the parity reference).
 
-### Smoke test
-See README "Smoke test" section (loop over `psql-16`, `psql-17`, `psql-18`).
+### Run / smoke locally
+- Bind-mount onto stock postgres (see `examples/docker-compose.yml`):
+  `docker compose -f examples/docker-compose.yml up`
+- The equivalent `docker run` is documented in the README "Szybki start".
 
 ## Architecture
 
-Three moving pieces:
+Two moving pieces, both bind-mounted onto `postgres:<major>`:
 
-1. **`Dockerfile`** — `FROM postgres:${POSTGRES_VERSION}`, adds `plpython3u`
-   using `${PG_MAJOR}` from the base image (one Dockerfile covers all majors).
-   Healthcheck via `pg_isready`.
-2. **`autotune.py`** — reads cgroup limit → `/proc/meminfo` → `POSTGRESQL_*`
-   env overrides; emits a pgtune-style config to stdout. Written to
-   `/postgresql_optimized.conf` at startup and included by `postgresql.conf`
-   via `include_if_exists`.
-3. **`docker-entrypoint-autotune.sh`** — wraps upstream
+1. **`autotune.sh`** — pure shell + awk (no Python). Reads cgroup limit →
+   `/proc/meminfo` → `POSTGRESQL_*` env overrides; emits a pgtune-style config
+   to stdout. Written to `/postgresql_optimized.conf` at startup and included
+   by `postgresql.conf` via `include_if_exists`. `autotune.py` is the original
+   and is kept as a byte-for-byte parity reference (verify via `sh autotune.sh
+   --test`; the two were diffed across forced/host/cgroup/unsafe/lock paths).
+2. **`docker-entrypoint-autotune.sh`** — wraps upstream
    `docker-ensure-initdb.sh`, idempotently appends the `include_if_exists`
-   line to `postgresql.conf`, runs `autotune.py`, then chains to
-   `docker-entrypoint.sh`.
+   line to `$PGDATA/postgresql.conf`, runs `autotune.sh`, then chains to
+   `docker-entrypoint.sh`. Python-free and `$PGDATA`-aware so it works on the
+   stock image; pin `PGDATA=/var/lib/postgresql/data` (stock PG18+ defaults it
+   to `/var/lib/postgresql/<major>/docker`).
 
-Build matrix lives in `docker-bake.hcl` (variable `POSTGRES_VERSIONS`). CI
-in `.github/workflows/build.yml` triggers on git tag `v*` and runs
-`docker buildx bake` + Trivy per major.
-
-## Release flow
-
-1. Bump `POSTGRES_VERSIONS` in `docker-bake.hcl` (verify against
-   [postgresql.org/support/versioning](https://www.postgresql.org/support/versioning/)).
-2. Update `CHANGELOG.md`.
-3. Git tag `v<YYYYMMDD>` (e.g. `v20260417`; suffix `.N` if >1/day).
-   Push → GH Actions builds matrix + pushes Docker tags + Trivy.
+CI in `.github/workflows/ci.yml`: autotune self-test, `pre-commit` (ruff +
+shellcheck), and a smoke job that bind-mounts onto `postgres:16/17/18` and
+checks autotune applied + ICU Polish collation works.
 
 ## Non-obvious
 
-- **No `:latest` Docker tag** — by design. Accidental major bump on an
-  existing `PGDATA` volume corrupts data, so the image is only published
-  under versioned tags (`psql-<X.Y>`, `psql-<X>`).
-- **Git tag format is independent of Docker tag format.** Git uses
-  `vYYYYMMDD`; Docker uses `psql-X.Y` / `psql-X` (from `docker-bake.hcl`).
-- **Default `POSTGRES_HOST_AUTH_METHOD=trust`** in the image is dev/test
+- **No custom image / no Docker Hub publish** — by design. Everything BPP needs
+  is env vars + two bind-mounted scripts; the only thing a custom build added
+  was the OS `pl_PL` locale (messages/number/date formatting), and Polish
+  *sorting* is handled by ICU regardless.
+- **Polish collation = ICU, not the OS locale.** `--icu-locale=pl-PL` works on
+  the stock image with no `pl_PL` locale generated; dropping `LANG=pl_PL` is
+  intentional.
+- **Default `POSTGRES_HOST_AUTH_METHOD=trust`** in examples is dev/test
   convenience. Production deployments MUST override to `scram-sha-256`.
 - `docker-entrypoint-autotune.sh` depends on upstream `docker-ensure-initdb.sh`
-  behavior — bumping the base `postgres` image may require re-checking
-  entrypoint compatibility.
+  / `docker-entrypoint.sh` behavior — bumping the base `postgres` major may
+  require re-checking entrypoint compatibility.
+- `autotune.sh` delegates all floating-point math to `awk` (same IEEE-754
+  doubles as Python) so unit normalization / `int()` truncation match
+  `autotune.py` exactly. Preserve that when editing.
